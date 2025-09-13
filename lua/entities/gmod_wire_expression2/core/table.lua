@@ -397,7 +397,7 @@ __e2setcost(1)
 
 -- Creates a table
 e2function table table(...tbl)
-	table_check_perf(self, tbl)
+	num_perf_check(self, #tbl)
 
 	local ret = newE2Table()
 	if #tbl == 0 then return ret end -- Don't construct table
@@ -414,8 +414,8 @@ e2function table table(...tbl)
 			ret.ntypes[k] = tid
 		end
 	end
-
 	ret.size = size
+
 	return ret
 end
 
@@ -847,7 +847,6 @@ e2function number table:maxIndex()
 	local largest = nil
 	local index = 0
 	for k,v in pairs( this.n ) do
-		cost = cost + 1
 		if (this.ntypes[k] == "n") then
 			if (largest == nil or v > largest) then
 				largest = v
@@ -865,7 +864,6 @@ e2function number table:minIndex()
 	local smallest = nil
 	local index = 0
 	for k,v in pairs( this.n ) do
-		cost = cost + 1
 		if (this.ntypes[k] == "n") then
 			if (smallest == nil or v < smallest) then
 				smallest = v

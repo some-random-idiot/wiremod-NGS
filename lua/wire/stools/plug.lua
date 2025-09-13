@@ -13,6 +13,7 @@ else
 	language.Add( "sboxlimit_wire_sockets", "You've hit the Wire Sockets limit!" )
 	language.Add( "undone_wireplug", "Undone Wire Plug" )
 	language.Add( "undone_wiresocket", "Undone Wire Socket" )
+	language.Add( "max_wire_plugs", "Max Wire Plugs:" )
 
 	language.Add( "Tool_wire_plug_freeze", "Freeze the socket." )
 	language.Add( "Tool_wire_plug_array", "Use array inputs/outputs instead." )
@@ -26,6 +27,8 @@ else
 		{ name = "right", text = "Create/Update " .. TOOL.Name },
 		{ name = "reload", text = "Increase angle offset by 45 degrees" },
 	}
+
+	WireToolSetup.setToolMenuIcon("icon16/server_connect.png")
 end
 
 WireToolSetup.BaseLang()

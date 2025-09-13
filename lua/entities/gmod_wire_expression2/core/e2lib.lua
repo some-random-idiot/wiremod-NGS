@@ -474,7 +474,7 @@ else
 	function E2Lib.isOwner(self, entity)
 		local owner = E2Lib.getOwner(self, entity)
 		if not IsValid(owner) then return false end
-	
+
 		return E2Lib.isFriend(owner, self.player)
 	end
 end
@@ -1150,11 +1150,19 @@ local file_extensions = {
 	["json"] = true,
 	["xml"] = true,
 	["csv"] = true,
-	["jpg"] = true,
-	["jpeg"] = true,
-	["png"] = true,
+	["dem"] = true,
+	["vcd"] = true,
+	["gma"] = true,
+	["mdl"] = true,
+	["phy"] = true,
+	["vvd"] = true,
+	["vtx"] = true,
+	["ani"] = true,
 	["vtf"] = true,
 	["vmt"] = true,
+	["png"] = true,
+	["jpg"] = true,
+	["jpeg"] = true,
 	["mp3"] = true,
 	["wav"] = true,
 	["ogg"] = true
@@ -1188,7 +1196,7 @@ end
 ---@return Trace? trace
 function E2Lib.unpackException(struct)
 	if type(struct) == "string" then
-		return false, struct, nil
+		return false, struct, { start_line = -1, start_col = -1 }
 	end
 	return struct.userdata and struct.userdata.catchable or false, struct.message, struct.trace
 end
@@ -1444,7 +1452,11 @@ function E2Lib.compileScript(code, owner)
 		else
 			local _, why, trace = E2Lib.unpackException(why)
 
-			if trace then
+			if why == "exit" then
+				return true
+			elseif why == "perf" then
+				return false,  "tick quota exceeded (at line " .. trace.start_line .. ", char " .. trace.start_col .. ")"
+			elseif trace then
 				return false, "Runtime error: '" .. why .. "' at line " .. trace.start_line .. ", col " .. trace.start_col
 			else
 				return false, why

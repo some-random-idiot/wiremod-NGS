@@ -32,13 +32,13 @@ end
 
 -- Allow to specify the description and type, like "Name (Description) [TYPE]"
 local function ParsePortName(namedesctype, fbtype, fbdesc)
-	local namedesc, tp = namedesctype:match("^(.+) %[(.+)%]$")
+	local namedesc, tp = string.match(namedesctype, "^(.+) %[(.+)%]$")
 	if not namedesc then
 		namedesc = namedesctype
 		tp = fbtype
 	end
 
-	local name, desc = namedesc:match("^(.+) %((.*)%)$")
+	local name, desc = string.match(namedesc, "^(.+) %((.*)%)$")
 	if not name then
 		name = namedesc
 		desc = fbdesc
@@ -46,8 +46,6 @@ local function ParsePortName(namedesctype, fbtype, fbdesc)
 	return name, desc, tp
 end
 
-local Inputs = {}
-local Outputs = {}
 local CurLink = {}
 local CurTime = CurTime
 
@@ -232,14 +230,7 @@ function WireLib.CreateSpecialInputs(ent, names, types, descs)
 			Num = n,
 		}
 
-		local idx = 1
-		while (Inputs[idx]) do
-			idx = idx+1
-		end
-		port.Idx = idx
-
 		ent_ports[name] = port
-		Inputs[idx] = port
 	end
 
 	WireLib._SetInputs(ent)
@@ -266,15 +257,7 @@ function WireLib.CreateSpecialOutputs(ent, names, types, descs)
 			Num = n,
 		}
 
-		local idx = 1
-		while (Outputs[idx]) do
-			idx = idx+1
-		end
-		port.Idx = idx
-
-
 		ent_ports[name] = port
-		Outputs[idx] = port
 	end
 
 	WireLib._SetOutputs(ent)
@@ -285,7 +268,10 @@ end
 function WireLib.AdjustSpecialInputs(ent, names, types, descs)
 	types = types or {}
 	descs = descs or {}
-	local ent_ports = ent.Inputs or {}
+
+	local ent_ports = ent.Inputs
+	if not ent_ports then ent_ports = {} ent.Inputs = ent_ports end
+
 	for n,v in ipairs(names) do
 		local name, desc, tp = ParsePortName(v, types[n] or "NORMAL", descs and descs[n])
 
@@ -312,14 +298,7 @@ function WireLib.AdjustSpecialInputs(ent, names, types, descs)
 				Num = n,
 			}
 
-			local idx = 1
-			while (Inputs[idx]) do
-				idx = idx+1
-			end
-			port.Idx = idx
-
 			ent_ports[name] = port
-			Inputs[idx] = port
 		end
 	end
 
@@ -343,7 +322,8 @@ function WireLib.AdjustSpecialOutputs(ent, names, types, descs)
 	types = types or {}
 	descs = descs or {}
 
-	local ent_ports = ent.Outputs or {}
+	local ent_ports = ent.Outputs
+	if not ent_ports then ent_ports = {} ent.Outputs = ent_ports end
 
 	local ent_mods = ent.EntityMods
 	if ent_mods then
@@ -363,21 +343,20 @@ function WireLib.AdjustSpecialOutputs(ent, names, types, descs)
 	end
 
 
-	local i = 0
-	for n,v in ipairs(names) do
+	for n, v in ipairs(names) do
 		local name, desc, tp = ParsePortName(v, types[n] or "NORMAL", descs and descs[n])
 
-		if (ent_ports[name]) then
-			if tp ~= ent_ports[name].Type then
+		local port = ent_ports[name]
+		if port then
+			if tp ~= port.Type then
 				WireLib.DisconnectOutput(ent, name)
-				ent_ports[name].Type = tp
+				port.Type = tp
 			end
-			WireLib.RemoveOutPort(ent, name)
-			ent_ports[name].Keep = true
-			ent_ports[name].Desc = desc
+			port.Keep = true
+			port.Num = n
+			port.Desc = desc
 		else
-			i = i + 1
-			local port = {
+			port = {
 				Keep = true,
 				Name = name,
 				Desc = desc,
@@ -385,17 +364,10 @@ function WireLib.AdjustSpecialOutputs(ent, names, types, descs)
 				Value = WireLib.GetDefaultForType(tp),
 				Connected = {},
 				TriggerLimit = 8,
-				Num = i,
+				Num = n,
 			}
 
-			local idx = 1
-			while (Outputs[idx]) do
-				idx = idx+1
-			end
-			port.Idx = idx
-
 			ent_ports[name] = port
-			Outputs[idx] = port
 		end
 	end
 
@@ -484,14 +456,6 @@ function WireLib.Restored(ent, force_outputs)
 			if port.Src and (not port.Path) then
 				port.Path = { { Entity = port.Src, Pos = Vector(0, 0, 0) } }
 			end
-
-			local idx = 1
-			while (Inputs[idx]) do
-				idx = idx+1
-			end
-			port.Idx = idx
-
-			Inputs[idx] = port
 		end
 	end
 
@@ -500,14 +464,6 @@ function WireLib.Restored(ent, force_outputs)
 		for _,port in pairs(ent_ports) do
 			port.Entity = ent
 			port.Type = port.Type or "NORMAL"
-
-			local idx = 1
-			while (Outputs[idx]) do
-				idx = idx+1
-			end
-			port.Idx = idx
-
-			Outputs[idx] = port
 		end
 	elseif (force_outputs) then
 		ent.Outputs = WireLib.CreateOutputs(ent, force_outputs)
@@ -557,7 +513,6 @@ function WireLib.Remove(ent, DontUnList)
 					end
 				end
 			end
-			Inputs[inport.Idx] = nil
 		end
 	end
 
@@ -566,7 +521,6 @@ function WireLib.Remove(ent, DontUnList)
 	if (ent_ports) then
 		for _,outport in pairs(ent_ports) do
 			ClearPorts(outport.Connected)
-			Outputs[outport.Idx] = nil
 		end
 	end
 
@@ -887,29 +841,67 @@ function WireLib.Weld(ent, traceEntity, tracePhysicsBone, DOR, collision, AllowW
 	end
 end
 
+local function LookupEntityByIdOrWmiId(entIdx, spawnId, GetEntByID)
+	local ent = GetEntByID(entIdx)
+
+	if IsValid(ent) then
+		return ent
+	end
+
+	-- Used for the Wire Map Interface.
+	-- Linked entities might be part of the map but not of the dupe/save file ("createdEntities"),
+	-- because the linked entity might be not duplicatable, but still belongs to the contraption.
+	-- In this case lookup the entity in an additional list aswell. This fixes wire entities not connecting to Wire Map Interface entities on paste/startup.
+
+	if not spawnId then
+		return nil
+	end
+
+	ent = WireLib.WireMapInterfaceLookup:getBySpawnIDDuped(spawnId)
+	if ent then
+		-- The spawnId is a custom id similar to ent:MapCreationID(), but it mostly survives duping.
+		return ent
+	end
+
+	ent = WireLib.WireMapInterfaceLookup:getBySpawnID(spawnId)
+	if ent then
+		return ent
+	end
+
+	return nil
+end
 
 function WireLib.BuildDupeInfo( Ent )
 	if not Ent.Inputs then return {} end
 
 	local info = { Wires = {} }
 	for portname,input in pairs(Ent.Inputs) do
-		if (IsValid(input.Src)) then
+		local SrcEntity = input.Src
+
+		if IsValid(SrcEntity) then
 			info.Wires[portname] = {
 				StartPos = input.StartPos,
 				Material = input.Material,
 				Color = input.Color,
 				Width = input.Width,
-				Src = input.Src:EntIndex(),
+				Src = SrcEntity:EntIndex(),
+				SrcWmiSpawnId = SrcEntity._IsWireMapInterfaceSubEntity and SrcEntity:_WMI_GetSpawnId() or nil,
 				SrcId = input.SrcId,
 				SrcPos = Vector(0, 0, 0),
 			}
 
-			if (input.Path) then
+			if input.Path then
 				info.Wires[portname].Path = {}
 
 				for _,v in ipairs(input.Path) do
-					if (IsValid(v.Entity)) then
-						table.insert(info.Wires[portname].Path, { Entity = v.Entity:EntIndex(), Pos = v.Pos })
+					local vEntity = v.Entity
+
+					if IsValid(vEntity) then
+						table.insert(info.Wires[portname].Path, {
+							Entity = vEntity:EntIndex(),
+							EntityWmiSpawnId = vEntity._IsWireMapInterfaceSubEntity and vEntity:_WMI_GetSpawnId() or nil,
+							Pos = v.Pos
+						})
 					end
 				end
 
@@ -925,72 +917,84 @@ function WireLib.BuildDupeInfo( Ent )
 	return info
 end
 
-function WireLib.ApplyDupeInfo( ply, ent, info, GetEntByID )
-	if info.extended and not ent.extended then
-		WireLib.CreateWirelinkOutput( ply, ent, {true} ) -- old dupe compatibility; use the new function
+hook.Add("Wire_ApplyDupeInfo", "Wire_AddWirelink", function(ply, inputEnt, outputEnt, inputData)
+	-- Wirelink and entity outputs
+
+	-- These are required if whichever duplicator you're using does not do entity modifiers before it runs PostEntityPaste
+	-- because if so, the wirelink and entity outputs may not have been created yet
+
+	if inputData.SrcId == "link" or inputData.SrcId == "wirelink" then -- If the target entity has no wirelink output, create one (& more old dupe compatibility)
+		inputData.SrcId = "wirelink"
+		if not outputEnt.extended then
+			WireLib.CreateWirelinkOutput( ply, outputEnt, {true} )
+		end
+	elseif inputData.SrcId == "entity" and ((outputEnt.Outputs and not outputEnt.Outputs.entity) or not outputEnt.Outputs) then -- if the input name is 'entity', and the target entity doesn't have that output...
+		WireLib.CreateEntityOutput( ply, outputEnt, {true} )
+	end
+end)
+
+function WireLib.ApplyDupeInfo( ply, inputEnt, info, GetEntByID )
+	if info.extended and not inputEnt.extended then
+		WireLib.CreateWirelinkOutput( ply, inputEnt, {true} ) -- old dupe compatibility; use the new function
+	end
+
+	if not istable(info.Wires) then
+		return
 	end
 
 	local idx = 0
-	if IsValid(ply) then idx = ply:UniqueID() end -- Map Save loading does not have a ply
-	if (info.Wires) then
-		for k,input in pairs(info.Wires) do
-			k=tostring(k) -- For some reason duplicator will parse strings containing numbers as numbers?
-			local ent2 = GetEntByID(input.Src)
+	if IsValid(ply) then
+		-- Map Save loading does not have a ply
+		idx = ply:UniqueID()
+	end
 
-			-- Input alias
-			if ent.Inputs and not ent.Inputs[k] then -- if the entity has any inputs and the input 'k' is not one of them...
-				if ent.InputAliases and ent.InputAliases[k] then
-					k = ent.InputAliases[k]
+	for k, inputData in pairs(info.Wires) do
+		k = tostring(k) -- For some reason duplicator will parse strings containing numbers as numbers?
+		local outputEnt = LookupEntityByIdOrWmiId(inputData.Src, inputData.SrcWmiSpawnId, GetEntByID)
+
+		-- Input alias
+		if inputEnt.Inputs and not inputEnt.Inputs[k] then -- if the entity has any inputs and the input 'k' is not one of them...
+			if inputEnt.InputAliases and inputEnt.InputAliases[k] then
+				k = inputEnt.InputAliases[k]
+			else
+				Msg("ApplyDupeInfo: Error, Could not find input '" .. k .. "' on entity type: '" .. inputEnt:GetClass() .. "'\n")
+				continue
+			end
+		end
+
+		if IsValid( outputEnt ) then
+			-- Sometimes you have to prepair the connection entities, before actually linking them during duplication.
+			-- Such cases are the Wire Map Interface and Wirelink support.
+			hook.Run("Wire_ApplyDupeInfo", ply, inputEnt, outputEnt, inputData)
+
+			-- Output alias
+			if outputEnt.Outputs and not outputEnt.Outputs[inputData.SrcId] then -- if the target entity has any outputs and the output 'inputData.SrcId' is not one of them...
+				if outputEnt.OutputAliases and outputEnt.OutputAliases[inputData.SrcId] then
+					inputData.SrcId = outputEnt.OutputAliases[inputData.SrcId]
 				else
-					Msg("ApplyDupeInfo: Error, Could not find input '" .. k .. "' on entity type: '" .. ent:GetClass() .. "'\n")
+					Msg("ApplyDupeInfo: Error, Could not find output '" .. inputData.SrcId .. "' on entity type: '" .. outputEnt:GetClass() .. "'\n")
 					continue
 				end
 			end
+		end
 
-			if IsValid( ent2 ) then
-				-- Wirelink and entity outputs
+		WireLib.Link_Start(idx, inputEnt, inputData.StartPos, k, inputData.Material, inputData.Color, inputData.Width)
 
-				-- These are required if whichever duplicator you're using does not do entity modifiers before it runs PostEntityPaste
-				-- because if so, the wirelink and entity outputs may not have been created yet
-
-				if input.SrcId == "link" or input.SrcId == "wirelink" then -- If the target entity has no wirelink output, create one (& more old dupe compatibility)
-					input.SrcId = "wirelink"
-					if not ent2.extended then
-						WireLib.CreateWirelinkOutput( ply, ent2, {true} )
-					end
-				elseif input.SrcId == "entity" and ((ent2.Outputs and not ent2.Outputs.entity) or not ent2.Outputs) then -- if the input name is 'entity', and the target entity doesn't have that output...
-					WireLib.CreateEntityOutput( ply, ent2, {true} )
-				end
-
-				-- Output alias
-				if ent2.Outputs and not ent2.Outputs[input.SrcId] then -- if the target entity has any outputs and the output 'input.SrcId' is not one of them...
-					if ent2.OutputAliases and ent2.OutputAliases[input.SrcId] then
-						input.SrcId = ent2.OutputAliases[input.SrcId]
-					else
-						Msg("ApplyDupeInfo: Error, Could not find output '" .. input.SrcId .. "' on entity type: '" .. ent2:GetClass() .. "'\n")
-						continue
-					end
+		if inputData.Path then
+			for _,v in ipairs(inputData.Path) do
+				local outputEnt = LookupEntityByIdOrWmiId(v.Entity, v.EntityWmiSpawnId, GetEntByID)
+				if IsValid(outputEnt) then
+					WireLib.Link_Node(idx, outputEnt, v.Pos)
+				else
+					Msg("ApplyDupeInfo: Error, Could not find the entity for wire path\n")
 				end
 			end
+		end
 
-			WireLib.Link_Start(idx, ent, input.StartPos, k, input.Material, input.Color, input.Width)
-
-			if input.Path then
-				for _,v in ipairs(input.Path) do
-					local ent2 = GetEntByID(v.Entity)
-					if IsValid(ent2) then
-						WireLib.Link_Node(idx, ent2, v.Pos)
-					else
-						Msg("ApplyDupeInfo: Error, Could not find the entity for wire path\n")
-					end
-				end
-			end
-
-			if IsValid(ent2) then
-				WireLib.Link_End(idx, ent2, input.SrcPos, input.SrcId)
-			else
-				Msg("ApplyDupeInfo: Error, Could not find the output entity\n")
-			end
+		if IsValid(outputEnt) then
+			WireLib.Link_End(idx, outputEnt, inputData.SrcPos, inputData.SrcId)
+		else
+			Msg("ApplyDupeInfo: Error, Could not find the output entity\n")
 		end
 	end
 end
@@ -1051,46 +1055,6 @@ Wire_Link_Clear					= WireLib.Link_Clear
 Wire_CreateOutputIterator		= WireLib.CreateOutputIterator
 Wire_BuildDupeInfo				= WireLib.BuildDupeInfo
 Wire_ApplyDupeInfo				= WireLib.ApplyDupeInfo
-
--- prevent applyForce+Anti-noclip-based killing contraptions
-hook.Add("InitPostEntity", "antiantinoclip", function()
-	local ENT = scripted_ents.GetList().rt_antinoclip_handler
-	if not ENT then return end
-	ENT = ENT.t
-
-	local rt_antinoclip_handler_StartTouch = ENT.StartTouch
-	function ENT:StartTouch(...)
-		if self.speed >= 20 then return end
-
-		local phys = self.Ent:GetPhysicsObject()
-		if phys:IsValid() and phys:GetAngleVelocity():Length() > 20 then return end
-
-		rt_antinoclip_handler_StartTouch(self, ...)
-	end
-
-	--local rt_antinoclip_handler_Think = ENT.Think
-	function ENT:Think()
-
-		local t = CurTime()
-		local dt = t-self.lastt
-		self.lastt = t
-
-		local phys = self.Ent:GetPhysicsObject()
-		local pos
-		if phys:IsValid() then
-			pos = phys:LocalToWorld(phys:GetMassCenter())
-		else
-			pos = self.Ent:GetPos()
-		end
-		self.speed = pos:Distance(self.oldpos)/dt
-		self.oldpos = pos
-		--rt_antinoclip_handler_Think(self, ...)
-	end
-
-	ENT.speed = 20
-	ENT.lastt = 0
-	ENT.oldpos = Vector(0,0,0)
-end)
 
 function WireLib.GetOwner(ent)
 	return E2Lib.getOwner({}, ent)
@@ -1617,13 +1581,13 @@ function WireLib.NotifyGroup(group, msg, severity, chatprint, color)
 	local plys = {}
 
 	if isstring(group) then
-		for _, p in ipairs(player.GetAll()) do
+		for _, p in player.Iterator() do
 			if p:GetUserGroup() == group then
 				plys[#plys + 1] = p
 			end
 		end
 	else
-		for _, p in ipairs(player.GetAll()) do
+		for _, p in player.Iterator() do
 			if table.HasValue(group, p:GetUserGroup()) then
 				plys[#plys + 1] = p
 			end
@@ -1642,5 +1606,5 @@ function WireLib.NotifyAll(msg, severity, chatprint, color)
 	notify(player.GetAll(), msg, severity, chatprint, color)
 end
 
-version = 241206
-version_string = "Workshop 2024.12.06 (fbe1bed)"
+version = 250904
+version_string = "Workshop 2025.09.04 (118bacb)"

@@ -239,13 +239,13 @@ local function flush_scale_queue(queue, recipient)
 	net.Start("wire_holograms_set_scale")
 		for _, plyqueue in pairs(queue) do
 			for Holo, scale in pairs(plyqueue) do
-				net.WriteUInt(Holo.ent:EntIndex(), 16)
+				net.WriteUInt(Holo.ent:EntIndex(), MAX_EDICT_BITS)
 				net.WriteFloat(scale.x)
 				net.WriteFloat(scale.y)
 				net.WriteFloat(scale.z)
 			end
 		end
-		net.WriteUInt(0, 16)
+		net.WriteUInt(0, MAX_EDICT_BITS)
 	if recipient then net.Send(recipient) else net.Broadcast() end
 end
 
@@ -257,15 +257,15 @@ local function flush_bone_scale_queue(queue, recipient)
 	for _, plyqueue in pairs(queue) do
 		for Holo, holoqueue in pairs(plyqueue) do
 			for bone, scale in pairs(holoqueue) do
-				net.WriteUInt(Holo.ent:EntIndex(), 16)
-				net.WriteUInt(bone + 1, 16) -- using +1 to be able reset holo bones scale with -1 and not use signed int
+				net.WriteUInt(Holo.ent:EntIndex(), MAX_EDICT_BITS)
+				net.WriteUInt(bone + 1, 9) -- using +1 to be able reset holo bones scale with -1 and not use signed int
 				net.WriteFloat(scale.x)
 				net.WriteFloat(scale.y)
 				net.WriteFloat(scale.z)
 			end
 		end
 	end
-	net.WriteUInt(0, 16)
+	net.WriteUInt(0, MAX_EDICT_BITS)
 	net.WriteUInt(0, 16)
 	if recipient then net.Send(recipient) else net.Broadcast() end
 end
@@ -279,7 +279,7 @@ local function flush_clip_queue(queue, recipient)
 			for Holo,holoqueue in pairs(plyqueue) do
 				for _, clip in pairs(holoqueue) do
 					if clip and clip.index then
-						net.WriteUInt(Holo.ent:EntIndex(), 16)
+						net.WriteUInt(Holo.ent:EntIndex(), MAX_EDICT_BITS)
 						net.WriteUInt(clip.index, 4) -- 4: absolute highest wire_holograms_max_clips is thus 16
 						if clip.enabled ~= nil then
 							net.WriteBool(true)
@@ -288,13 +288,13 @@ local function flush_clip_queue(queue, recipient)
 							net.WriteBool(false)
 							net.WriteVector(clip.origin)
 							net.WriteVector(clip.normal)
-							net.WriteUInt(clip.localentid, 16)
+							net.WriteUInt(clip.localentid, MAX_EDICT_BITS)
 						end
 					end
 				end
 			end
 		end
-		net.WriteUInt(0, 16)
+		net.WriteUInt(0, MAX_EDICT_BITS)
 	if recipient then net.Send(recipient) else net.Broadcast() end
 end
 
@@ -305,10 +305,10 @@ local function flush_vis_queue()
 		if IsValid( ply ) and next(plyqueue) ~= nil then
 			net.Start("wire_holograms_set_visible")
 				for Holo,visible in pairs(plyqueue) do
-					net.WriteUInt(Holo.ent:EntIndex(), 16)
+					net.WriteUInt(Holo.ent:EntIndex(), MAX_EDICT_BITS)
 					net.WriteBit(visible)
 				end
-				net.WriteUInt(0, 16)
+				net.WriteUInt(0, MAX_EDICT_BITS)
 			net.Send(ply)
 		end
 	end
@@ -320,11 +320,11 @@ local function flush_player_color_queue()
 	net.Start("wire_holograms_set_player_color")
 		for _, plyqueue in pairs(player_color_queue) do
 			for Holo,color in pairs(plyqueue) do
-				net.WriteUInt(Holo.ent:EntIndex(), 16)
+				net.WriteUInt(Holo.ent:EntIndex(), MAX_EDICT_BITS)
 				net.WriteVector(color)
 			end
 		end
-		net.WriteUInt(0, 16)
+		net.WriteUInt(0, MAX_EDICT_BITS)
 	net.Broadcast()
 end
 
@@ -984,6 +984,7 @@ e2function void holoClip(index, clipidx, vector origin, vector normal, isglobal)
 end
 
 e2function void holoClip(index, vector origin, vector normal, entity localent) -- Clip at first index
+	if not IsValid(localent) then return self:throw("Invalid entity!", nil) end
 	local Holo = CheckIndex(self, index)
 	if not Holo then return end
 
@@ -991,6 +992,7 @@ e2function void holoClip(index, vector origin, vector normal, entity localent) -
 end
 
 e2function void holoClip(index, clipidx, vector origin, vector normal, entity localent)
+	if not IsValid(localent) then return self:throw("Invalid entity!", nil) end
 	local Holo = CheckIndex(self, index)
 	if not Holo then return end
 
@@ -1569,7 +1571,7 @@ concommand.Add( "wire_holograms_block", function( ply, com, args )
 				clearholos_all(uid)
 			end
 			BlockList[v:SteamID()] = true
-			for _,p in ipairs( player.GetAll() ) do
+			for _,p in player.Iterator() do
 				p:PrintMessage( HUD_PRINTTALK, "(ADMIN) " .. v:GetName() .. " added to holograms blocklist" )
 			end
 		end
@@ -1596,7 +1598,7 @@ concommand.Add( "wire_holograms_unblock", function( ply, com, args )
 		local v = players[1]
 		if BlockList[v:SteamID()] == true then
 			BlockList[v:SteamID()] = nil
-			for _,player in ipairs( player.GetAll() ) do
+			for _,player in player.Iterator() do
 				player:PrintMessage( HUD_PRINTTALK, "(ADMIN) " .. v:GetName() .. " removed from holograms blocklist" )
 			end
 		else
@@ -1624,11 +1626,11 @@ concommand.Add( "wire_holograms_block_id", function( ply, com, args )
 		ConsoleMessage( ply, steamID .. " is already in the holograms blocklist!" )
 	else
 		BlockList[steamID] = true
-		for _,player in ipairs( player.GetAll() ) do
+		for _,player in player.Iterator() do
 			player:PrintMessage( HUD_PRINTTALK, "(ADMIN) " .. steamID .. " added to holograms blocklist" )
 		end
 		local uid
-		for _,v in ipairs( player.GetAll() ) do
+		for _,v in player.Iterator() do
 			if v:SteamID() == steamID then
 				uid = v:UniqueID()
 				if (E2HoloRepo[uid]) then
@@ -1653,7 +1655,7 @@ concommand.Add( "wire_holograms_unblock_id", function( ply, com, args )
 
 	if BlockList[steamID] == true then
 		BlockList[steamID] = nil
-		for _,player in ipairs( player.GetAll() ) do
+		for _,player in player.Iterator() do
 			player:PrintMessage( HUD_PRINTTALK, "(ADMIN) " .. steamID .. " removed from holograms blocklist" )
 		end
 	else

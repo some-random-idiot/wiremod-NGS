@@ -11,6 +11,7 @@ local sbox_E2_PropCore = CreateConVar( "sbox_E2_PropCore", "2", FCVAR_ARCHIVE ) 
 local sbox_E2_canMakeStatue = CreateConVar("sbox_E2_canMakeStatue", "1", FCVAR_ARCHIVE)
 local wire_expression2_propcore_sents_whitelist = CreateConVar("wire_expression2_propcore_sents_whitelist", 1, FCVAR_ARCHIVE, "If 1 - players can spawn sents only from the default sent list. If 0 - players can spawn sents from both the registered list and the entity tab.", 0, 1)
 local wire_expression2_propcore_sents_enabled = CreateConVar("wire_expression2_propcore_sents_enabled", 1, FCVAR_ARCHIVE, "If 1 - this allows sents to be spawned. (Doesn't affect the sentSpawn whitelist). If 0 - prevents sentSpawn from being used at all.", 0, 1)
+local wire_expression2_propcore_canMakeUnbreakable = CreateConVar("wire_expression2_propcore_canMakeUnbreakable", 1, FCVAR_ARCHIVE, "If 1 - this allows props to be made unbreakable. If 0 - prevents propMakeBreakable from being used at all.", 0, 1)
 
 local isOwner = E2Lib.isOwner
 local GetBones = E2Lib.GetBones
@@ -21,21 +22,17 @@ local typeIDToString = WireLib.typeIDToString
 local castE2ValueToLuaValue = E2Lib.castE2ValueToLuaValue
 
 local E2totalspawnedprops = 0
-local E2tempSpawnedProps = 0
-local TimeStamp = 0
 local playerMeta = FindMetaTable("Player")
 
-local function TempReset()
- if (CurTime()>= TimeStamp) then
-	E2tempSpawnedProps = 0
-	TimeStamp = CurTime()+1
- end
-end
-hook.Add("Think","TempReset",TempReset)
+function PropCore.WithinPropcoreLimits(ply)
+	if CurTime() >= (ply.E2tempSpawnedPropsTime or 0) then
+		ply.E2tempSpawnedProps = 0
+		ply.E2tempSpawnedPropsTime = CurTime() + 1
+	end
 
-function PropCore.WithinPropcoreLimits()
-	return (sbox_E2_maxProps:GetInt() <= 0 or E2totalspawnedprops<sbox_E2_maxProps:GetInt()) and E2tempSpawnedProps < sbox_E2_maxPropsPerSecond:GetInt()
+	return (sbox_E2_maxProps:GetInt() <= 0 or E2totalspawnedprops < sbox_E2_maxProps:GetInt()) and ply.E2tempSpawnedProps < sbox_E2_maxPropsPerSecond:GetInt()
 end
+
 local WithinPropcoreLimits = PropCore.WithinPropcoreLimits
 
 function PropCore.ValidSpawn(ply, model, vehicleType)
@@ -43,9 +40,7 @@ function PropCore.ValidSpawn(ply, model, vehicleType)
 	local limithit = playerMeta.LimitHit
 	playerMeta.LimitHit = function() end
 
-	if not PropCore.WithinPropcoreLimits() then
-		ret = false
-	elseif not (util.IsValidProp( model ) and WireLib.CanModel(ply, model)) then
+	if not (util.IsValidProp( model ) and WireLib.CanModel(ply, model)) then
 		ret = false
 	elseif vehicleType then
 		ret = gamemode.Call( "PlayerSpawnVehicle", ply, model, vehicleType, list.Get( "Vehicles" )[vehicleType] ) ~= false
@@ -61,7 +56,7 @@ local ValidSpawn = PropCore.ValidSpawn
 local canHaveInvalidPhysics = {
 	delete=true, parent=true, deparent=true, solid=true,
 	shadow=true, draw=true, use=true, pos=true, ang=true,
-	manipulate=true, noDupe=true
+	manipulate=true, noDupe=true, dissolve=true
 }
 
 function PropCore.ValidAction(self, entity, cmd, bone)
@@ -104,7 +99,7 @@ local function MakePropNoEffect(...)
 end
 
 function PropCore.CreateProp(self, model, pos, angles, freeze, vehicleType)
-	if not WithinPropcoreLimits() then return self:throw("Prop limit reached! (cooldown or max)", NULL) end
+	if not WithinPropcoreLimits(self.player) then return self:throw("Prop limit reached! (cooldown or max)", NULL) end
 	if not ValidSpawn(self.player, model, vehicleType) then return NULL end
 
 	pos = WireLib.clampPos( pos )
@@ -169,7 +164,7 @@ function PropCore.CreateProp(self, model, pos, angles, freeze, vehicleType)
 
 	self.data.spawnedProps[ prop ] = self.data.propSpawnUndo
 	E2totalspawnedprops = E2totalspawnedprops + 1
-	E2tempSpawnedProps = E2tempSpawnedProps + 1
+	self.player.E2tempSpawnedProps = self.player.E2tempSpawnedProps + 1
 
 	return prop
 end
@@ -207,7 +202,7 @@ function PropCore.CreateSent(self, class, pos, angles, freeze, data)
 	if not wire_expression2_propcore_sents_enabled:GetBool() then return self:throw("Sent spawning is disabled by server! (wire_expression2_propcore_sents_enabled)", NULL) end
 	if blacklistedSents[class] then return self:throw("Sent class '" .. class .. "' is blacklisted!", NULL) end
 	if hook.Run( "Expression2_CanSpawnSent", class, self ) == false then return self:throw("A hook prevented this sent to be spawned!", nil) end
-	if not WithinPropcoreLimits() then return self:throw("Prop limit reached! (cooldown or max)", NULL) end
+	if not WithinPropcoreLimits(self.player) then return self:throw("Prop limit reached! (cooldown or max)", NULL) end
 	-- Same logic as in PropCore.ValidSpawn
 	-- Decided not to put it in a function, as it's only used twice, and abstraction may lead to problems for future devs.
 	local limithit = playerMeta.LimitHit
@@ -321,24 +316,27 @@ function PropCore.CreateSent(self, class, pos, angles, freeze, data)
 	elseif sent then -- Spawning an entity from entity tab.
 		if sent.AdminOnly and not self.player:IsAdmin() then return self:throw("You do not have permission to spawn '" .. class .. "' (admin-only)!", NULL) end
 
-		local mockTrace = {
-			FractionLeftSolid = 0,
-			HitNonWorld       = true,
-			Fraction          = 0,
-			Entity            = NULL,
-			HitPos            = Vector(pos),
-			HitNormal         = Vector(0, 0, 0),
-			HitBox            = 0,
-			Normal            = Vector(1, 0, 0),
-			Hit               = true,
-			HitGroup          = 0,
-			MatType           = 0,
-			StartPos          = Vector(0, 0, 0),
-			PhysicsBone       = 0,
-			WorldToLocal      = Vector(0, 0, 0),
-		}
-		if sent.t and sent.t.SpawnFunction then
-			entity = sent.t.SpawnFunction( sent.t, ply, mockTrace, class )
+		local stored_sent = scripted_ents.GetStored(class)
+
+		if stored_sent and stored_sent.t.SpawnFunction then
+			local mockTrace = {
+				FractionLeftSolid = 0,
+				HitNonWorld       = true,
+				Fraction          = 0,
+				Entity            = NULL,
+				HitPos            = Vector(pos),
+				HitNormal         = Vector(0, 0, 0),
+				HitBox            = 0,
+				Normal            = Vector(1, 0, 0),
+				Hit               = true,
+				HitGroup          = 0,
+				MatType           = 0,
+				StartPos          = Vector(0, 0, 0),
+				PhysicsBone       = 0,
+				WorldToLocal      = Vector(0, 0, 0),
+			}
+
+			entity = stored_sent.t.SpawnFunction(stored_sent.t, self.player, mockTrace, class)
 		else
 			entity = ents.Create( class )
 			if IsValid(entity) then
@@ -349,7 +347,9 @@ function PropCore.CreateSent(self, class, pos, angles, freeze, data)
 			end
 		end
 
-		gamemode.Call("PlayerSpawnedSENT", self.player, entity)
+		if IsValid(entity) then
+			gamemode.Call("PlayerSpawnedSENT", self.player, entity)
+		end
 	end
 
 	if not IsValid( entity ) then return NULL end
@@ -375,13 +375,16 @@ function PropCore.CreateSent(self, class, pos, angles, freeze, data)
 	entity:CallOnRemove( "wire_expression2_propcore_remove",
 		function( entity )
 			self.data.spawnedProps[ entity ] = nil
-			E2totalspawnedprops = E2totalspawnedprops - 1
+
+			if IsValid(self.player) then
+				self.player.E2totalspawnedprops = E2totalspawnedprops - 1
+			end
 		end
 	)
 
 	self.data.spawnedProps[ entity ] = self.data.propSpawnUndo
 	E2totalspawnedprops = E2totalspawnedprops + 1
-	E2tempSpawnedProps = E2tempSpawnedProps + 1
+	self.player.E2tempSpawnedProps = self.player.E2tempSpawnedProps + 1
 
 	return entity
 end
@@ -647,12 +650,12 @@ end
 __e2setcost(5)
 [nodiscard]
 e2function number sentCanCreate()
-	return WithinPropcoreLimits() and 1 or 0
+	return WithinPropcoreLimits(self.player) and 1 or 0
 end
 
 [nodiscard]
 e2function number sentCanCreate(string class)
-	if not WithinPropcoreLimits() then return 0 end
+	if not WithinPropcoreLimits(self.player) then return 0 end
 
 	local registered_sent, sent = list.GetForEdit("wire_spawnable_ents_registry")[class], list.Get("SpawnableEntities")[class]
 	if registered_sent then return 1
@@ -714,11 +717,69 @@ e2function void entity:propBreak()
 	this:Fire("break",1,0)
 end
 
+hook.Add("EntityTakeDamage", "WireUnbreakable", function(ent, dmginfo)
+    if ent.wire_unbreakable then return true end
+end)
+
+[nodiscard]
+e2function number entity:canMakeUnbreakable()
+	if not IsValid(this) then return self:throw("Invalid entity!", 0) end
+	if not wire_expression2_propcore_canMakeUnbreakable:GetBool() then return 0 end
+	return this:GetClass() == "prop_physics" and 1 or 0
+end
+
+e2function void entity:propMakeBreakable(number breakable)
+	if not wire_expression2_propcore_canMakeUnbreakable:GetBool() then return self:throw("Making unbreakable is disabled by server! (wire_expression2_propcore_canMakeUnbreakable)", nil) end
+	if not ValidAction(self, this, "makeUnbreakable") then return end
+	if this:GetClass() ~= "prop_physics" then return self:throw("This entity can not be made unbreakable!", nil) end
+
+	local unbreakable = this:Health() > 0 and breakable == 0 and true or nil
+	if this.wire_unbreakable == unbreakable then return end
+	this.wire_unbreakable = unbreakable
+
+	if unbreakable then
+		self.entity:CallOnRemove("wire_expression2_propcore_propMakeBreakable-" .. this:EntIndex(),
+			function( e )
+				this.wire_unbreakable = nil
+			end
+		)
+	else
+		self.entity:RemoveCallOnRemove("wire_expression2_propcore_propMakeBreakable-" .. this:EntIndex())
+	end
+end
+
+[nodiscard]
+e2function number entity:propIsBreakable()
+	if not IsValid(this) then return self:throw("Invalid entity!", 0) end
+	return this:Health() > 0 and not this.WireUnbreakable and 1 or 0
+end
+
+E2Lib.registerConstant("ENTITY_DISSOLVE_NORMAL", 0)
+E2Lib.registerConstant("ENTITY_DISSOLVE_ELECTRICAL", 1)
+E2Lib.registerConstant("ENTITY_DISSOLVE_ELECTRICAL_LIGHT", 2)
+E2Lib.registerConstant("ENTITY_DISSOLVE_CORE", 3)
+
+e2function void entity:propDissolve()
+	if not ValidAction(self, this, "dissolve") then return end
+	this:Dissolve()
+end
+
+e2function void entity:propDissolve(number dissolvetype)
+	if not ValidAction(self, this, "dissolve") then return end
+	this:Dissolve(dissolvetype)
+end
+
+e2function void entity:propDissolve(number dissolvetype, number magnitude)
+	if not ValidAction(self, this, "dissolve") then return end
+	this:Dissolve(dissolvetype, magnitude)
+end
+
 e2function void entity:use()
 	if not ValidAction(self, this, "use") then return end
 
 	local ply = self.player
 	if not IsValid(ply) then return end -- if the owner isn't connected to the server, do nothing
+	if ply:InVehicle() and this:IsVehicle() then return end -- don't use a vehicle if you're in one
 
 	if hook.Run( "PlayerUse", ply, this ) == false then return end
 	if hook.Run( "WireUse", ply, this, self.entity ) == false then return end
@@ -954,23 +1015,27 @@ e2function void entity:propSetAngVelocityInstant(vector velocity)
 	end
 end
 
-hook.Add( "CanDrive", "checkPropStaticE2", function( ply, ent ) if ent.propStaticE2 ~= nil then return false end end )
-e2function void entity:propStatic( number static )
-	if not ValidAction( self, this, "static" ) then return end
+hook.Add("CanDrive", "checkPropStaticE2", function(ply, ent) if ent.propStaticE2 ~= nil then return false end end)
+
+e2function void entity:propStatic(number static)
+	if not ValidAction(self, this, "static") then return end
+
 	if static ~= 0 and this.propStaticE2 == nil then
 		local phys = this:GetPhysicsObject()
 		this.propStaticE2 = phys:IsMotionEnabled()
 		this.PhysgunDisabled = true
-		this:SetUnFreezable( true )
-		phys:EnableMotion( false )
-	elseif this.propStaticE2 ~= nil then
+		this:SetUnFreezable(true)
+		phys:EnableMotion(false)
+	elseif static == 0 and this.propStaticE2 ~= nil then
 		this.PhysgunDisabled = false
-		this:SetUnFreezable( false )
+		this:SetUnFreezable(false)
+
 		if this.propStaticE2 == true then
 			local phys = this:GetPhysicsObject()
 			phys:Wake()
-			phys:EnableMotion( true )
+			phys:EnableMotion(true)
 		end
+
 		this.propStaticE2 = nil
 	end
 end
@@ -1333,7 +1398,7 @@ e2function void propSpawnUndo(number on)
 end
 
 e2function number propCanCreate()
-	if WithinPropcoreLimits() then return 1 end
+	if WithinPropcoreLimits(self.player) then return 1 end
 	return 0
 end
 
@@ -1595,14 +1660,16 @@ local function E2CollisionEventHandler()
 		if IsValid(chip) then
 			if not chip.error then
 				for _,i in ipairs(ctx.data.E2QueuedCollisions) do
-					if i.cb then
-						-- Arguments for this were checked when we set it up, no need to typecheck
-						i.cb:UnsafeExtCall({i.us,i.xcd.HitEntity,i.xcd},ctx)
+					if ctx.data.E2TrackedCollisions[i.us:EntIndex()] then
+						if i.cb then
+							-- Arguments for this were checked when we set it up, no need to typecheck
+							i.cb:UnsafeExtCall({i.us,i.xcd.HitEntity,i.xcd},ctx)
+							if chip.error then break end
+						end
+						-- It's okay to ExecuteEvent regardless, it'll just return when it fails to find the registered event
+						chip:ExecuteEvent("entityCollision",{i.us,i.xcd.HitEntity,i.xcd})
 						if chip.error then break end
 					end
-					-- It's okay to ExecuteEvent regardless, it'll just return when it fails to find the registered event
-					chip:ExecuteEvent("entityCollision",{i.us,i.xcd.HitEntity,i.xcd})
-					if chip.error then break end
 				end
 			end
 			-- Wipe queued collisions regardless of error
