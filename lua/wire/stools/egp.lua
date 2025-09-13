@@ -154,6 +154,7 @@ if CLIENT then
 	language.Add( "Tool.wire_egp.reload_0", "Open the Reload Menu for several lag fixing options" )
 	language.Add( "Tool.wire_egp.1", "Now right click a vehicle." )
 	language.Add( "sboxlimit_wire_egps", "You've hit the EGP limit!" )
+	language.Add( "max_wire_egps", "Max Wire EGP" )
 	language.Add( "Undone_wire_egp", "Undone EGP" )
 	language.Add( "Tool_wire_egp_createflat", "Create flat to surface" )
 	language.Add( "Tool_wire_egp_weld", "Weld" )
@@ -163,6 +164,8 @@ if CLIENT then
 	language.Add( "Tool_wire_egp_emitter_drawdist", "Additional emitter draw distance (Clientside)" )
 	language.Add( "Tool_wire_egp_emitter_usert", "Use an RT for emitters (improves performance)" )
 	language.Add( "Tool_wire_egp_translucent", "Transparent background" )
+
+	WireToolSetup.setToolMenuIcon("icon16/application_xp_terminal.png")
 end
 
 WireToolSetup.SetupLinking(false, "vehicle") -- Generates RightClick, Reload, and DrawHUD functions

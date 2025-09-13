@@ -93,7 +93,12 @@ function ENT:Destruct()
 				E2Lib.Env.Events[evt].destructor(self.context)
 			end
 
-			E2Lib.Env.Events[evt].listening[self] = nil
+			for k, ent in pairs(E2Lib.Env.Events[evt].listening) do
+				if ent == self then
+					table.remove(E2Lib.Env.Events[evt].listening, k)
+					break
+				end
+			end
 		end
 	end
 end
@@ -140,13 +145,15 @@ function ENT:Execute(script, context)
 		if msg == "exit" then
 			self:UpdatePerf(selfTbl)
 		elseif msg == "perf" then
-			local trace = context.trace
+			local trace = context.trace or trace
+
 			self:UpdatePerf(selfTbl)
 			self:Error("Expression 2 (" .. selfTbl.name .. "): tick quota exceeded (at line " .. trace.start_line .. ", char " .. trace.start_col .. ")", "tick quota exceeded")
 		elseif trace then
 			self:Error("Expression 2 (" .. selfTbl.name .. "): Runtime error '" .. msg .. "' at line " .. trace.start_line .. ", char " .. trace.start_col, "script error")
 		else
-			local trace = context.trace
+			local trace = context.trace or trace
+
 			self:Error("Expression 2 (" .. selfTbl.name .. "): Internal error '" .. msg .. "' at line " .. trace.start_line .. ", char " .. trace.start_col, "script error")
 		end
 	end
@@ -328,6 +335,9 @@ function ENT:CompileCode(buffer, files, filepath)
 	if filepath then -- filepath may have already been set from the dupe function
 		self.filepath = filepath
 	end
+
+	local status, errormsg, overlaymsg = hook.Run("Expression2_CanCompile", self.player, self, buffer, filepath, files)
+	if status == false then return self:Error(errormsg or "A hook prevented this E2 from compiling", overlaymsg or "terminated") end
 
 	local status, directives, buffer = E2Lib.PreProcessor.Execute(buffer,nil,self)
 	if not status then return self:Error(directives[1].message) end
@@ -567,7 +577,8 @@ function ENT:Setup(buffer, includes, restore, forcecompile, filepath)
 				-- If the event has a constructor to run when the E2 is made and listening to the event.
 				E2Lib.Env.Events[evt].constructor(self.context)
 			end
-			E2Lib.Env.Events[evt].listening[self] = true
+
+			table.insert(E2Lib.Env.Events[evt].listening, self)
 		end
 	end
 
@@ -673,6 +684,35 @@ function ENT:ApplyDupeInfo(ply, ent, info, GetEntByID, GetConstByID)
 	BaseClass.ApplyDupeInfo(self, ply, ent, info, GetEntByID, GetConstByID)
 end
 
+-- Clean up some extra data that bloats the E2
+function ENT:OnEntityCopyTableFinish(t)
+	t.Author = nil
+	t.Inputs = nil
+	t.Outputs = nil
+	t.OverlayData = nil
+	t.PrintName = nil
+	t.WireDebugName = nil
+	t.buffer = nil
+	t.context = nil
+	t.directives = nil
+	t.duped = nil
+	t.error = nil
+	t.first = nil
+	t.funcs = nil
+	t.globalvars = nil
+	t.globalvars_mut = nil
+	t.includes = nil
+	t.inports = nil
+	t.lastResetOrError = nil
+	t.name = nil
+	t.original = nil
+	t.outports = nil
+	t.persists = nil
+	t.player = nil
+	t.trigger = nil
+	t.uid = nil
+end
+
 -- -------------------------------- Transfer ----------------------------------
 
 --[[
@@ -706,7 +746,7 @@ end)
 
 hook.Add("PlayerAuthed", "Wire_Expression2_Player_Authed", function(ply, sid, uid)
 	for _, ent in ipairs(ents.FindByClass("gmod_wire_expression2")) do
-		if (ent.uid == uid) then
+		if ent.uid == uid and ent.context then
 			ent.context.player = ply
 			ent.player = ply
 			ent:SetNWEntity("player", ply)

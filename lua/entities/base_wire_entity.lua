@@ -10,6 +10,8 @@ ENT.AdminOnly = false
 ENT.IsWire = true
 
 if CLIENT then
+	local EntityMeta           = FindMetaTable("Entity")
+
 	local wire_drawoutline = CreateClientConVar("wire_drawoutline", 1, true, false)
 
 	function ENT:Initialize()
@@ -18,11 +20,12 @@ if CLIENT then
 	end
 
 	function ENT:Draw()
-		self:DoNormalDraw()
+		local entsTbl = EntityMeta.GetTable( self )
+		entsTbl.DoNormalDraw( self )
 		Wire_Render(self)
-		if self.GetBeamLength and (not self.GetShowBeam or self:GetShowBeam()) then
+		if entsTbl.GetBeamLength and (not entsTbl.GetShowBeam or entsTbl.GetShowBeam( self )) then
 			-- Every SENT that has GetBeamLength should draw a tracer. Some of them have the GetShowBeam boolean
-			Wire_DrawTracerBeam( self, 1, self.GetBeamHighlight and self:GetBeamHighlight() or false )
+			Wire_DrawTracerBeam( self, 1, entsTbl.GetBeamHighlight and entsTbl.GetBeamHighlight( self ) or false )
 		end
 	end
 
@@ -135,22 +138,20 @@ if CLIENT then
 
 	-- This is overridable by other wire entities which want to customize the overlay
 	function ENT:GetWorldTipBodySize()
-		local txt = self:GetOverlayData().txt
-		if txt == nil or txt == "" then return 0,0 end
-		return surface.GetTextSize( txt )
+		local data = self:GetOverlayData()
+		if not (istable(data) and isstring(data.txt)) then return 0,0 end
+		return surface.GetTextSize( data.txt )
 	end
 
 	-- This is overridable by other wire entities which want to customize the overlay
 	function ENT:DrawWorldTipBody( pos )
 		local data = self:GetOverlayData()
+		if not (istable(data) and isstring(data.txt) and data.txt ~= "") then return end
 		draw.DrawText( data.txt, "GModWorldtip", pos.center.x, pos.min.y + edgesize/2, color_white, TEXT_ALIGN_CENTER )
 	end
 
 	-- This is overridable by other wire entities which want to customize the overlay
 	function ENT:DrawWorldTip()
-		local data = self:GetOverlayData()
-		if not data then return end
-
 		surface.SetFont( "GModWorldtip" )
 
 		local class = getWireName( self ) .. " [" .. self:EntIndex() .. "]"
@@ -158,7 +159,7 @@ if CLIENT then
 		local name
 		if CPPI then
 			local owner = self:CPPIGetOwner()
-			name = string.format("(%s)", (owner and owner:IsPlayer()) and owner:GetName() or "World")
+			name = string.format("(%s)", (isentity(owner) and owner:IsPlayer()) and owner:GetName() or "World")
 		else
 			name = "(" .. self:GetPlayerName() .. ")"
 		end
@@ -395,12 +396,15 @@ util.AddNetworkString( "wire_overlay_request" )
 --------------------------------------------------------------------------------
 
 local function syncWireOverlay(ply, ent, row)
+	if ent.PrepareOverlayData then ent:PrepareOverlayData() end
 	local overlayData = ent.OverlayData
+
 	if overlayData and overlayData.__time and overlayData.__time > row[1] then
-		net.Start( "wire_overlay_data" )
-			net.WriteEntity( ent )
-			net.WriteTable( overlayData )
+		net.Start("wire_overlay_data")
+		net.WriteEntity(ent)
+		net.WriteTable(overlayData)
 		net.Send(ply)
+
 		row[1] = overlayData.__time
 	end
 end
@@ -426,7 +430,8 @@ end
 net.Receive( "wire_overlay_request", function( len, ply )
 	if net.ReadBool() then
 		local ent = net.ReadEntity()
-		if not (ent and ent:IsValid()) then return end
+		if not IsValid(ent) then return end
+
 		local lastUpdate = net.ReadFloat()
 
 		local row = {lastUpdate, ent}

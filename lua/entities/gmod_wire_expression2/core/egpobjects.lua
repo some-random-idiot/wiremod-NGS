@@ -10,6 +10,7 @@ local hasObject = EGP.HasObject
 local egp_create = EGP.Create
 local isAllowed = EGP.IsAllowed
 local isEGPObject = EGP.IsEGPObject
+local angle_origin = Angle()
 
 -- Table of allowed arguments and their types
 local EGP_ALLOWED_ARGS =
@@ -587,7 +588,7 @@ end
 e2function array egpobject:globalVertices()
 	if not isValid(this) then return self:throw("Invalid EGP Object", {}) end
 	if this.verticesindex then
-		local data = EGP:GetGlobalVertices(this.EGP, this)
+		local data = EGP.GetGlobalVertices(this.EGP, this)
 		if data.vertices then
 			local ret = {}
 			for i = 1, #data.vertices do

@@ -220,7 +220,7 @@ if SERVER then
 	net.Receive("wire_adv_upload", wireAdvReceiver)
 
 	util.AddNetworkString("wire_adv_unwire")
-	net.Receive( "wire_adv_unwire", function(ply)
+	net.Receive( "wire_adv_unwire", function(len, ply)
 		ErrorNoHalt("wire_adv_unwire is deprecated, use wire_adv_upload with an unsigned byte 2 at the start")
 
 		wireAdvUnwire(ply, net.ReadEntity(), net.ReadTable())
@@ -1240,7 +1240,14 @@ elseif CLIENT then
 				local mat = Material(matName)
 				local theEnt = wiring[3]
 				if not theEnt:IsValid() then
+					self:StopRenderingCurrentWire()
 					break
+				end
+				-- Prune invalid nodes
+				for j=#nodes, 1, -1 do
+					if not nodes[j][1]:IsValid() then
+						table.remove(nodes, j)
+					end
 				end
 
 				local start = theEnt:LocalToWorld(wiring[2])
