@@ -82,6 +82,7 @@ function E2Lib.castE2ValueToLuaValue(targetTypeID, e2Value)
 	return nil
 end
 
+local tableRecurseCount = 0
 -- Well, most of it is a nobrainer, but still helpful when you're just iterating and casting everything.
 castE2ValueToLuaValueTable = {
 	[TYPE_BOOL] = function(e2Value) -- from 'number'
@@ -109,14 +110,23 @@ castE2ValueToLuaValueTable = {
 		local e2TypeID = TypeID(e2Value)
 		if e2TypeID == TYPE_TABLE then
 			if e2Value.ntypes or e2Value.stypes then -- Is it an E2 table? Unpack it correctly then.
+				tableRecurseCount = tableRecurseCount + 1
+
+				if tableRecurseCount > 1000 then
+					-- 1000+ recursions is insanity, let's stop it.
+					MsgC(Color(255, 0, 0), "[Wiremod] An E2 containing insanely nested table(s) exceeded the type cast recursion limit. Investigate.")
+					tableRecurseCount = 0
+					return nil
+				end
+
 				local res = {}
 
-				-- Handle 'n' field
+				-- Handle 'n' field (named keys?)
 				for i, value in pairs(e2Value["n"]) do
 					res[i] = E2Lib.castE2ValueToLuaValue(e2TypeNameToLuaTypeID(e2Value["ntypes"][i]), value) -- recursively unpacks any tables, or just returns the value.
 				end
 
-				-- Handle 's' field
+				-- Handle 's' field (sequential keys?)
 				for key, value in pairs(e2Value["s"]) do
 					res[key] = E2Lib.castE2ValueToLuaValue(e2TypeNameToLuaTypeID(e2Value["stypes"][key]), value) -- recursively unpacks any tables, or just returns the value.
 				end
